@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:core="http://www.mulesoft.org/schema/mule/core"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd 
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<flow name="read-db-accounts-to-csv-auto-watermarking" doc:id="42a1e0d9-98b1-4453-b67a-d893d87ec487">
+		<db:listener doc:name="customers_flights" doc:id="055ee0ee-673d-46b1-b391-5b509c393b4e" config-ref="MySQL_Database_Config" table="flights_customers" watermarkColumn="accountID">
+			<scheduling-strategy>
+				<fixed-frequency frequency="5" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</db:listener>
+		<set-variable value='#[Mule::p("accounts.folder.out") ++ "diy_auto_wm/"++ &#10;Mule::p("accounts.filename.prefix") ++ "-" ++ &#10;dw::core::Strings::dasherize(payload.country as String) ++ "-" ++&#10;now() as String {format: "yyyyMMdd"} ++&#10;Mule::p("accounts.filename.ext")]' doc:name="fileName" doc:id="1a237b93-3a53-4c84-8e20-bc4361e2f087" variableName="fileName"/>
+		<file:write doc:id="1bde07a9-c54e-42ab-8b85-7e1bc833792b" doc:name="Accounts per country per date" path="#[vars.fileName]" mode="APPEND">
+			<file:content ><![CDATA[#[output application/csv header=false
+---
+payload]]]></file:content>
+		</file:write>
+		<logger level="INFO" doc:name="Logger" doc:id="d0c2a8ee-c4e9-43ec-a85a-fd844fd1fe7f" message="#[output application/json --- {
+	filename: vars.fileName,
+	p: payload
+}]"/>
+	</flow>
+	
+	
+	<flow name="read-db-accounts-to-csv-manual-watermarking" doc:id="837cddc6-4c30-4890-b8ac-9607aaefd1fa" >
+		<scheduler doc:name="Scheduler" doc:id="c9412e7a-db77-4132-8f53-43b75d6de47e" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="5" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<os:retrieve doc:name="maxId" doc:id="3ee620f7-90b8-46ec-a0b7-02a33b749855" key="maxId" target="maxId">
+			<os:default-value ><![CDATA[0]]></os:default-value>
+		</os:retrieve>
+		<db:select doc:name="flights_customers" doc:id="c8932c6f-f054-4697-bf6f-98a6be5f30ae" config-ref="MySQL_Database_Config">
+			<db:sql ><![CDATA[SELECT * FROM flights_customers WHERE accountID > :id]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+	id: vars.maxId
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="fa64ef5b-9649-4190-ad5e-40e03ebd8993" >
+			<when expression="#[sizeOf(payload) &gt; 0]">
+				<os:store doc:name="maxId" doc:id="d9235fce-637f-4716-872c-a65bf56a41bc" key="maxId">
+			<os:value><![CDATA[#[max(payload.*accountID default [])]]]></os:value>
+		</os:store>
+				<flow-ref doc:name="set-filenames-and-write-csv-files" doc:id="e340174f-44fd-40c2-b734-0b9bfad788d5" name="set-filenames-and-write-csv-files" />
+				<logger level="INFO" doc:name="Logger" doc:id="f78ab646-3cb5-46e6-9ecd-e4bb469c3b9a" message="#[output application/json --- payload]" />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="f6a8619a-6b3c-4714-a1e7-be13a18c2556" message='#[output application/json --- {message: "No new records"}]'/>
+			</otherwise>
+		</choice>
+	</flow>
+	<sub-flow name="set-filenames-and-write-csv-files" doc:id="bcbb1d9b-fec2-41cd-8824-450cd316e833">
+		<foreach doc:name="For Each" doc:id="ad84c3d7-31d3-42d1-b958-da45c423d206" collection="#[message.payload.*country distinctBy $]">
+					<set-variable value='#[Mule::p("accounts.folder.out") ++ "diy_manual_wm/"++ &#10;Mule::p("accounts.filename.prefix") ++ "-" ++ &#10;dw::core::Strings::dasherize(payload) ++ "-" ++&#10;now() as String {format: "yyyyMMdd"} ++&#10;Mule::p("accounts.filename.ext")]' doc:name="fileName" doc:id="1a237b93-3a53-4c84-8e20-bc4361e2f087" variableName="fileName" />
+					<ee:transform doc:name="Transform Message" doc:id="2a6cddd2-f6cc-459d-a185-da5da764451a">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+vars.rootMessage.payload filter ($.country == payload)]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<file:write doc:id="1bde07a9-c54e-42ab-8b85-7e1bc833792b" doc:name="Accounts per country per date" path="#[vars.fileName]" mode="APPEND">
+			<file:content><![CDATA[#[output application/csv header=false
+---
+payload]]]></file:content>
+		</file:write>
+				</foreach>
+	</sub-flow>
+
+
+	<flow name="process-customer-accounts-recordsFlow" doc:id="fef4c76e-1e99-4c5f-b612-e13cdff07b49" >
+		<file:listener doc:name="read-csv-accounts-batch" doc:id="4b5c43ca-02cd-42c7-918a-ab6cb37ec254" directory="${accounts.folder.in}" autoDelete="true" outputMimeType="application/csv; header=false">
+			<scheduling-strategy >
+				<fixed-frequency frequency="5" timeUnit="SECONDS"/>
+			</scheduling-strategy>
+			<file:matcher filenamePattern="*.csv" />
+		</file:listener>
+		<ee:transform doc:name="Transform Message" doc:id="de8544a0-eeac-4f47-8d8f-87fd72444797" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java 
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<batch:job jobName="process-customer-accounts-recordsBatch_Job" doc:id="9c8457cc-673f-4ffb-99ac-58a2ba89eaa9" >
+			<batch:process-records >
+				<batch:step name="ReadTxsForAccount" doc:id="727304a9-defb-488f-8440-e7c6b8da2b08" >
+					<db:select doc:name="flights_transactions for accountID" doc:id="6dfe85ef-990b-486d-94cd-88828c8a3eab" config-ref="MySQL_Database_Config" target="transactions">
+						<db:sql ><![CDATA[SELECT * FROM flights_transactions WHERE customerRef=:id]]></db:sql>
+						<db:input-parameters ><![CDATA[#[{
+	id: payload.column_0
+}]]]></db:input-parameters>
+					</db:select>
+				</batch:step>
+				<batch:step name="StoreOnlyAccountsWithTransactions" doc:id="4bbae29a-cf94-4a8e-8d4c-63621211a49e" acceptExpression="#[ sizeOf(vars.transactions) &gt; 0 ]">
+					<ee:transform doc:name="Transform Message" doc:id="9e28ce1b-1916-4c80-b93c-0bbe901b8493" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	(payload),
+	transactions: vars.transactions
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<batch:aggregator doc:name="Batch Aggregator" doc:id="bfc0d4e1-0e6e-4b00-ac5a-b6573ec94e52" size="3">
+						<logger level="INFO" doc:name="Store the Accounts With Transactions" doc:id="81d27fb4-9fd7-4db7-9d56-2e12d2513bc1" message="#[output application/json --- payload]"/>
+					</batch:aggregator>
+				</batch:step>
+			</batch:process-records>
+		</batch:job>
+		<logger level="INFO" doc:name="Logger" doc:id="94e80b76-a54c-4458-ab3c-3d480d90c644" message="#[output application/json --- payload]"/>
+	</flow>
+	
+	
+</mule>
