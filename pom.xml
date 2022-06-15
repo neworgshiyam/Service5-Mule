@@ -5,7 +5,7 @@
         
         <groupId>com.mycompany</groupId>
         <artifactId>diy-13-2-customer-account-recordsv1</artifactId>
-        <version>1.0.1</version>
+        <version>1.0.2</version>
         <packaging>mule-application</packaging>
 
 	      <name>diy-13-2-customer-account-recordsv1</name>
