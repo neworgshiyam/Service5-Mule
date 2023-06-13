@@ -1,0 +1,14 @@
+name:  Mule_Service3_Build_Deploy
+on:
+  workflow_dispatch:
+permissions:
+    contents: write
+    packages: write
+    actions: write
+    id-token: write
+jobs: 
+  Service2_Build:
+     name: Mule-Build
+     uses: shiyamsundark/DevOpsCommon-Mule/.github/workflows/Build_Deploy.yml@main
+     with:
+       Repository: ${{ github.repository }}
