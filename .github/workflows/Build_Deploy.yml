@@ -1,5 +1,8 @@
 name:  Mule_Service3_Build_Deploy
 on:
+  repository_dispatch:
+    types: 
+      - Service3-Mule
   workflow_dispatch:
 permissions:
     contents: write
@@ -7,8 +10,26 @@ permissions:
     actions: write
     id-token: write
 jobs: 
-  Service2_Build:
+  Set_Input_Variables:
+    runs-on: ubuntu-latest
+    outputs:
+        Version: ${{ steps.Input_Parameter.outputs.Version }}
+        Repository: ${{ steps.Input_Parameter.outputs.Repository }}
+    env:
+        Repository: ${{ github.event.client_payload.Repo }} 
+        Version: ${{ github.event.client_payload.Version }}
+    steps:
+      - name: Input Parameter
+        id: Input_Parameter
+        run: |
+             echo "Version: ${{ env.Version }}"
+             echo "Repository: ${{ env.Repository }}"
+              echo "Version=$Version" >> $GITHUB_OUTPUT
+             echo "Repository=$Repository" >> $GITHUB_OUTPUT
+        
+  Service1_Deploy:
+     needs: Set_Input_Variables
      name: Mule-Build-Deploy
-     uses: shiyamsundark/DevOpsCommon-Mule/.github/workflows/Build_Deploy.yml@main
+     uses: neworgshiyam/DevOpsCommon-Mule/.github/workflows/Build_Deploy.yml@main
      with:
        Repository: ${{ github.repository }}
